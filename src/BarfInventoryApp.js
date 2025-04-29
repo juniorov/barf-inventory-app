@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import 'bootstrap/dist/css/bootstrap.min.css';
+import React, { useState, useEffect, useCallback } from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';  //Ya no lo usaremos, pero lo dejo por si acaso
 import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -21,6 +21,8 @@ const ALL_INGREDIENTS = [
     { value: 'pescado', label: 'Pescado' },
     { value: 'carneMolida', label: 'Carne Molida' },
 ];
+
+const MAX_INGREDIENTS_PER_BAG = 4;
 
 // Componente para mostrar mensajes (Toast)
 const Toast = ({ message, type, onClose }) => {
@@ -66,7 +68,7 @@ const IncompleteBagCard = ({ bag, onEdit, onDelete, onComplete }) => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.2 }}
-            className="card mb-3" // Usando clases de Bootstrap
+            className="card mb-3"
         >
             <div className="card-body d-flex justify-content-between align-items-center">
                 <div>
@@ -290,7 +292,7 @@ const BarfInventoryApp = () => {
             showMessage('No puedes seleccionar más de 4 ingredientes', 'error');
             return;
         }
-         if (bagQuantity <= 0) { //valida la cantidad
+        if (bagQuantity <= 0) { //valida la cantidad
             showMessage('La cantidad debe ser mayor que cero', 'error');
             return;
         }
@@ -339,6 +341,34 @@ const BarfInventoryApp = () => {
         );
     };
 
+    // Función para calcular las porciones faltantes
+    const calculateMissingIngredients = useCallback(() => {
+        const missing = {
+            pollo: 0,
+            higado: 0,
+            rinon: 0,
+            corazon: 0,
+            pescado: 0,
+            carneMolida: 0,
+        };
+
+        incompleteBags.forEach(bag => {
+            const missingIngredientsCount = MAX_INGREDIENTS_PER_BAG - bag.ingredientCount;
+
+            if (missingIngredientsCount > 0) {
+                if (!bag.ingredients.includes('pollo')) missing.pollo += bag.quantity;
+                if (!bag.ingredients.includes('higado')) missing.higado += bag.quantity;
+                if (!bag.ingredients.includes('rinon')) missing.rinon += bag.quantity;
+                if (!bag.ingredients.includes('corazon')) missing.corazon += bag.quantity;
+                if (!bag.ingredients.includes('pescado')) missing.pescado += bag.quantity;
+                if (!bag.ingredients.includes('carneMolida')) missing.carneMolida += bag.quantity;
+            }
+        });
+        return missing;
+    }, [incompleteBags]);
+
+    const missingIngredients = calculateMissingIngredients();
+
     // Render
     return (
         <div className="p-4">
@@ -348,7 +378,7 @@ const BarfInventoryApp = () => {
 
             <div className="row g-4">
                 {/* Sección de Bolsas Completas */}
-                <div className="col-md-6">
+                <div className="col-sm-6 col-md-4">
                     <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Completas</h2>
                         <p className="text-muted mb-3">Número de bolsas listas</p>
@@ -357,13 +387,13 @@ const BarfInventoryApp = () => {
                             <div className="d-flex gap-2">
                                 <button
                                     onClick={decrementCompleteBags}
-                                    className="btn btn-outline-secondary"
+                                    className="btn btn-outline-danger"
                                 >
                                     <Minus className="h-4 w-4" />
                                 </button>
                                 <button
                                     onClick={incrementCompleteBags}
-                                    className="btn btn-outline-secondary"
+                                    className="btn btn-outline-success"
                                 >
                                     <Plus className="h-4 w-4" />
                                 </button>
@@ -373,7 +403,7 @@ const BarfInventoryApp = () => {
                 </div>
 
                 {/* Sección de Bolsas Incompletas */}
-                <div className="col-md-6">
+                <div className="col-sm-6 col-md-4">
                     <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Incompletas</h2>
                         <p className="text-muted mb-3">Bolsas con menos de 4 ingredientes</p>
@@ -427,6 +457,21 @@ const BarfInventoryApp = () => {
                                 ))}
                             </AnimatePresence>
                         </div>
+                    </div>
+                </div>
+                {/* Sección de Ingredientes Faltantes */}
+                <div className="col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <h2 className="h5 mb-2">Ingredientes Faltantes para Completar Bolsas</h2>
+                        <p className="text-muted mb-3">Porciones de ingredientes necesarias para completar todas las bolsas incompletas:</p>
+                        <ul className="list-group">
+                            <li className="list-group-item"><strong>Pollo:</strong> {missingIngredients.pollo} porciones</li>
+                            <li className="list-group-item"><strong>Hígado:</strong> {missingIngredients.higado} porciones</li>
+                            <li className="list-group-item"><strong>Riñón:</strong> {missingIngredients.rinon} porciones</li>
+                            <li className="list-group-item"><strong>Corazón:</strong> {missingIngredients.corazon} porciones</li>
+                            <li className="list-group-item"><strong>Pescado:</strong> {missingIngredients.pescado} porciones</li>
+                            <li className="list-group-item"><strong>Carne Molida:</strong> {missingIngredients.carneMolida} porciones</li>
+                        </ul>
                     </div>
                 </div>
             </div>
