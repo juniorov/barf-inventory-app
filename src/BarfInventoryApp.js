@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import 'bootstrap/dist/css/bootstrap.min.css';  //Ya no lo usaremos, pero lo dejo por si acaso
-import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, AlertTriangle, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Definición de tipos
 /**
@@ -23,6 +24,16 @@ const ALL_INGREDIENTS = [
 ];
 
 const MAX_INGREDIENTS_PER_BAG = 4;
+
+// Valores por defecto de gramos por porción.  Ahora es un estado.
+const DEFAULT_GRAMS_PER_PORTION = {
+    pollo: 132,
+    pescado: 83,
+    corazon: 45,
+    higado: 49,
+    rinon: 49,
+    carneMolida: 83,
+};
 
 // Componente para mostrar mensajes (Toast)
 const Toast = ({ message, type, onClose }) => {
@@ -182,11 +193,14 @@ const BarfInventoryApp = () => {
     const [toastMessage, setToastMessage] = useState('');
     const [toastType, setToastType] = useState('info');
     const [quantity, setQuantity] = useState(1);
+    const [gramsPerPortion, setGramsPerPortion] = useState(DEFAULT_GRAMS_PER_PORTION);  // Nuevo estado para los gramos por porción
+    const [editingGrams, setEditingGrams] = useState(false);
 
     // Carga inicial desde localStorage
     useEffect(() => {
         const savedCompleteBags = localStorage.getItem('completeBags');
         const savedIncompleteBags = localStorage.getItem('incompleteBags');
+        const savedGramsPerPortion = localStorage.getItem('gramsPerPortion');
 
         if (savedCompleteBags) {
             setCompleteBags(parseInt(savedCompleteBags, 10));
@@ -213,13 +227,23 @@ const BarfInventoryApp = () => {
                 setIncompleteBags([]);
             }
         }
+        if (savedGramsPerPortion) {
+            try {
+                setGramsPerPortion(JSON.parse(savedGramsPerPortion));
+            } catch (error) {
+                console.error("Error parsing gramsPerPortion", error);
+                setGramsPerPortion(DEFAULT_GRAMS_PER_PORTION);
+            }
+        }
+
     }, []);
 
     // Guardar en localStorage cuando cambian los datos
     useEffect(() => {
         localStorage.setItem('completeBags', completeBags.toString());
         localStorage.setItem('incompleteBags', JSON.stringify(incompleteBags));
-    }, [completeBags, incompleteBags]);
+        localStorage.setItem('gramsPerPortion', JSON.stringify(gramsPerPortion));
+    }, [completeBags, incompleteBags, gramsPerPortion]);
 
     // Función para mostrar un toast
     const showMessage = (message, type = 'info') => {
@@ -369,6 +393,28 @@ const BarfInventoryApp = () => {
 
     const missingIngredients = calculateMissingIngredients();
 
+    // Función para calcular la cantidad a comprar
+    const calculatePurchaseAmounts = useCallback(() => {
+        const purchaseAmounts = {};
+        for (const ingredient in missingIngredients) {
+            purchaseAmounts[ingredient] = (missingIngredients[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+        }
+        return purchaseAmounts;
+    }, [missingIngredients, gramsPerPortion]);
+
+    const purchaseAmounts = calculatePurchaseAmounts();
+
+    const handleGramsChange = (ingredient, value) => {
+        setGramsPerPortion(prevGrams => ({
+            ...prevGrams,
+            [ingredient]: value,
+        }));
+    };
+
+    const toggleEditingGrams = () => {
+        setEditingGrams(prev => !prev);
+    };
+
     // Render
     return (
         <div className="p-4">
@@ -472,6 +518,47 @@ const BarfInventoryApp = () => {
                             <li className="list-group-item"><strong>Pescado:</strong> {missingIngredients.pescado} porciones</li>
                             <li className="list-group-item"><strong>Carne Molida:</strong> {missingIngredients.carneMolida} porciones</li>
                         </ul>
+                    </div>
+                </div>
+            </div>
+
+            {/* Sección de Cantidad a Comprar */}
+            <div className="row mt-4">
+                <div className="col-12 col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h2 className="h5">Cantidad de Ingredientes a Comprar</h2>
+                            <button onClick={toggleEditingGrams} className="btn btn-outline-success btn-sm d-flex align-items-center">
+                                <Settings className="h-4 w-4" />
+                                {editingGrams ? ' Guardar' : ' Editar'} Cantidades
+                            </button>
+                        </div>
+                        <p className="text-muted mb-3">Cantidad total de cada ingrediente necesaria, basada en las porciones faltantes:</p>
+                        <ul className="list-group">
+                            {Object.entries(purchaseAmounts).map(([ingredient, amount]) => (
+                                <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
+                                    <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}: </strong>
+                                        {editingGrams ? (
+                                            <input
+                                                type="number"
+                                                value={gramsPerPortion[ingredient] || 0}
+                                                onChange={(e) => handleGramsChange(ingredient, parseInt(e.target.value, 10))}
+                                                className="form-control w-50 ml-2"
+                                                min="0"
+                                            />
+                                        ) : (
+                                            <span className="ml-2">{amount > 1000 ? `${amount/1000} kg` : amount + ' g'} </span>
+                                        )}
+                                    </span>
+                                    {!editingGrams && <span>{gramsPerPortion[ingredient]} g / porción</span>}
+                                </li>
+                            ))}
+                        </ul>
+                        {editingGrams && (
+                            <div className="mt-3">
+                                <p className="text-muted small">Edite los gramos por porción y haga clic en Guardar para actualizar los cálculos.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
