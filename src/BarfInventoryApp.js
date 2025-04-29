@@ -182,6 +182,31 @@ const IncompleteBagForm = ({ ingredients: selectedIngredients, quantity: bagQuan
     );
 };
 
+// Componente para la entrada de porciones deseadas
+const DesiredPortionsInput = ({ desiredPortions, onPortionChange }) => {
+    return (
+        <div className="bg-white shadow rounded p-4 mt-4">
+            <h2 className="h5 mb-2">Porciones Deseadas</h2>
+            <p className="text-muted mb-3">Ingresa la cantidad de porciones que necesitas de cada ingrediente:</p>
+            <ul className="list-group">
+                {Object.entries(desiredPortions).map(([ingredient, quantity]) => (
+                    <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
+                        <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}:</strong></span>
+                        <input
+                            type="number"
+                            value={quantity}
+                            onChange={(e) => onPortionChange(ingredient, parseInt(e.target.value, 10) >= 0 ? parseInt(e.target.value, 10) : 0)}
+                            className="form-control w-25 text-end"
+                            min="0"
+                        />
+                        <span>porciones</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
+
 // Componente principal de la aplicación
 const BarfInventoryApp = () => {
     const [completeBags, setCompleteBags] = useState(0);
@@ -195,12 +220,22 @@ const BarfInventoryApp = () => {
     const [quantity, setQuantity] = useState(1);
     const [gramsPerPortion, setGramsPerPortion] = useState(DEFAULT_GRAMS_PER_PORTION);  // Nuevo estado para los gramos por porción
     const [editingGrams, setEditingGrams] = useState(false);
+    const [desiredPortions, setDesiredPortions] = useState({ // Nuevo estado para las porciones deseadas
+        pollo: 0,
+        higado: 0,
+        rinon: 0,
+        corazon: 0,
+        pescado: 0,
+        carneMolida: 0,
+    });
+    const [bagToDeleteId, setBagToDeleteId] = useState(null); // Estado para controlar el ID de la bolsa a eliminar
 
     // Carga inicial desde localStorage
     useEffect(() => {
         const savedCompleteBags = localStorage.getItem('completeBags');
         const savedIncompleteBags = localStorage.getItem('incompleteBags');
         const savedGramsPerPortion = localStorage.getItem('gramsPerPortion');
+        const savedDesiredPortions = localStorage.getItem('desiredPortions');
 
         if (savedCompleteBags) {
             setCompleteBags(parseInt(savedCompleteBags, 10));
@@ -208,7 +243,6 @@ const BarfInventoryApp = () => {
         if (savedIncompleteBags) {
             try {
                 const parsedBags = JSON.parse(savedIncompleteBags);
-                // Validate the structure of the parsed data
                 if (Array.isArray(parsedBags) && parsedBags.every(bag =>
                     typeof bag === 'object' &&
                     typeof bag.id === 'string' &&
@@ -220,7 +254,7 @@ const BarfInventoryApp = () => {
                     setIncompleteBags(parsedBags);
                 } else {
                     console.error('Invalid data structure in localStorage for incompleteBags');
-                    setIncompleteBags([]); // or some default value
+                    setIncompleteBags([]);
                 }
             } catch (error) {
                 console.error('Error parsing incompleteBags from localStorage:', error);
@@ -235,6 +269,21 @@ const BarfInventoryApp = () => {
                 setGramsPerPortion(DEFAULT_GRAMS_PER_PORTION);
             }
         }
+        if (savedDesiredPortions) {
+            try {
+                setDesiredPortions(JSON.parse(savedDesiredPortions));
+            } catch (error) {
+                console.error("Error parsing desiredPortions", error);
+                setDesiredPortions({
+                    pollo: 0,
+                    higado: 0,
+                    rinon: 0,
+                    corazon: 0,
+                    pescado: 0,
+                    carneMolida: 0,
+                });
+            }
+        }
 
     }, []);
 
@@ -243,7 +292,8 @@ const BarfInventoryApp = () => {
         localStorage.setItem('completeBags', completeBags.toString());
         localStorage.setItem('incompleteBags', JSON.stringify(incompleteBags));
         localStorage.setItem('gramsPerPortion', JSON.stringify(gramsPerPortion));
-    }, [completeBags, incompleteBags, gramsPerPortion]);
+        localStorage.setItem('desiredPortions', JSON.stringify(desiredPortions)); // Guardar porciones deseadas
+    }, [completeBags, incompleteBags, gramsPerPortion, desiredPortions]);
 
     // Función para mostrar un toast
     const showMessage = (message, type = 'info') => {
@@ -332,11 +382,23 @@ const BarfInventoryApp = () => {
     };
 
     const deleteBag = (id) => {
-        setIncompleteBags(prevBags => {
-            const updatedBags = prevBags.filter(bag => bag.id !== id);
-            return updatedBags;
-        });
-        showMessage('Bolsa incompleta eliminada', 'error');
+        setBagToDeleteId(id); // Almacena el ID de la bolsa a eliminar y abre el modal de confirmación
+    };
+
+    const confirmDeleteBag = () => {
+        // Elimina la bolsa solo si hay un ID almacenado
+        if (bagToDeleteId) {
+            setIncompleteBags(prevBags => {
+                const updatedBags = prevBags.filter(bag => bag.id !== bagToDeleteId);
+                return updatedBags;
+            });
+            showMessage('Bolsa incompleta eliminada', 'error');
+        }
+        setBagToDeleteId(null); // Resetea el ID y cierra el modal
+    };
+
+    const cancelDeleteBag = () => {
+        setBagToDeleteId(null); // Resetea el ID y cierra el modal
     };
 
     const completeBag = (id) => {
@@ -411,10 +473,33 @@ const BarfInventoryApp = () => {
 
     const purchaseAmounts = calculatePurchaseAmounts();
 
+      // Función para calcular la cantidad a comprar basado en las porciones deseadas
+    const calculatePurchaseFromDesired = useCallback(() => {
+        const purchaseAmountsDesired = {};
+        for (const ingredient in desiredPortions) {
+            const totalGrams = (desiredPortions[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+             if (totalGrams > 1000) {
+                purchaseAmountsDesired[ingredient] = Math.ceil(totalGrams / 100) / 10;
+            } else {
+                purchaseAmountsDesired[ingredient] = totalGrams;
+            }
+        }
+        return purchaseAmountsDesired;
+    }, [desiredPortions, gramsPerPortion]);
+
+    const purchaseAmountsDesired = calculatePurchaseFromDesired();
+
     const handleGramsChange = (ingredient, value) => {
         setGramsPerPortion(prevGrams => ({
             ...prevGrams,
             [ingredient]: value,
+        }));
+    };
+
+      const handleDesiredPortionChange = (ingredient, quantity) => {
+        setDesiredPortions(prev => ({
+            ...prev,
+            [ingredient]: quantity,
         }));
     };
 
@@ -510,6 +595,24 @@ const BarfInventoryApp = () => {
                                 ))}
                             </AnimatePresence>
                         </div>
+                         <AnimatePresence>
+                            {bagToDeleteId && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 z-50 flex justify-center items-center"
+                                >
+                                    <div className="bg-white rounded-md p-6 shadow-lg">
+                                        <p className="mb-4">¿Estás seguro de que quieres eliminar esta bolsa?</p>
+                                        <div className="d-flex justify-end gap-2">
+                                            <button className="btn btn-secondary" onClick={cancelDeleteBag}>Cancelar</button>
+                                            <button className="btn btn-danger" onClick={confirmDeleteBag}>Eliminar</button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
                 {/* Sección de Ingredientes Faltantes */}
@@ -570,6 +673,28 @@ const BarfInventoryApp = () => {
                         )}
                     </div>
                 </div>
+
+                <div className="col-12 col-sm-6 col-md-4">
+                    <DesiredPortionsInput
+                        desiredPortions={desiredPortions}
+                        onPortionChange={handleDesiredPortionChange}
+                    />
+                </div>
+
+                <div className="col-12 col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4 mt-4">
+                        <h2 className="h5 mb-2">Total a Comprar (Porciones Deseadas)</h2>
+                        <p className="text-muted mb-3">Cantidad total de cada ingrediente a comprar según las porciones deseadas:</p>
+                        <ul className="list-group">
+                            {Object.entries(purchaseAmountsDesired).map(([ingredient, amount]) => (
+                                <li key={ingredient} className="list-group-item">
+                                    <strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}:</strong>{' '}
+                                    {typeof amount === 'number' ? (Number.isInteger(amount) ? `${amount} g` : `${amount} kg`) : amount}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
             </div>
             <AnimatePresence>
                 {showToast && (
@@ -585,4 +710,3 @@ const BarfInventoryApp = () => {
 };
 
 export default BarfInventoryApp;
-
