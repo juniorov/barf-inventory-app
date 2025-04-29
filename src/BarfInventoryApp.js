@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, Settings, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Definición de tipos
 /**
@@ -21,6 +22,18 @@ const ALL_INGREDIENTS = [
     { value: 'pescado', label: 'Pescado' },
     { value: 'carneMolida', label: 'Carne Molida' },
 ];
+
+const MAX_INGREDIENTS_PER_BAG = 4;
+
+// Valores por defecto de gramos por porción.  Ahora es un estado.
+const DEFAULT_GRAMS_PER_PORTION = {
+    pollo: 132,
+    pescado: 83,
+    corazon: 45,
+    higado: 49,
+    rinon: 49,
+    carneMolida: 83,
+};
 
 // Componente para mostrar mensajes (Toast)
 const Toast = ({ message, type, onClose }) => {
@@ -66,7 +79,7 @@ const IncompleteBagCard = ({ bag, onEdit, onDelete, onComplete }) => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.2 }}
-            className="card mb-3" // Usando clases de Bootstrap
+            className="card mb-3"
         >
             <div className="card-body d-flex justify-content-between align-items-center">
                 <div>
@@ -180,11 +193,14 @@ const BarfInventoryApp = () => {
     const [toastMessage, setToastMessage] = useState('');
     const [toastType, setToastType] = useState('info');
     const [quantity, setQuantity] = useState(1);
+    const [gramsPerPortion, setGramsPerPortion] = useState(DEFAULT_GRAMS_PER_PORTION);  // Nuevo estado para los gramos por porción
+    const [editingGrams, setEditingGrams] = useState(false);
 
     // Carga inicial desde localStorage
     useEffect(() => {
         const savedCompleteBags = localStorage.getItem('completeBags');
         const savedIncompleteBags = localStorage.getItem('incompleteBags');
+        const savedGramsPerPortion = localStorage.getItem('gramsPerPortion');
 
         if (savedCompleteBags) {
             setCompleteBags(parseInt(savedCompleteBags, 10));
@@ -211,13 +227,23 @@ const BarfInventoryApp = () => {
                 setIncompleteBags([]);
             }
         }
+        if (savedGramsPerPortion) {
+            try {
+                setGramsPerPortion(JSON.parse(savedGramsPerPortion));
+            } catch (error) {
+                console.error("Error parsing gramsPerPortion", error);
+                setGramsPerPortion(DEFAULT_GRAMS_PER_PORTION);
+            }
+        }
+
     }, []);
 
     // Guardar en localStorage cuando cambian los datos
     useEffect(() => {
         localStorage.setItem('completeBags', completeBags.toString());
         localStorage.setItem('incompleteBags', JSON.stringify(incompleteBags));
-    }, [completeBags, incompleteBags]);
+        localStorage.setItem('gramsPerPortion', JSON.stringify(gramsPerPortion));
+    }, [completeBags, incompleteBags, gramsPerPortion]);
 
     // Función para mostrar un toast
     const showMessage = (message, type = 'info') => {
@@ -290,7 +316,7 @@ const BarfInventoryApp = () => {
             showMessage('No puedes seleccionar más de 4 ingredientes', 'error');
             return;
         }
-         if (bagQuantity <= 0) { //valida la cantidad
+        if (bagQuantity <= 0) { //valida la cantidad
             showMessage('La cantidad debe ser mayor que cero', 'error');
             return;
         }
@@ -339,6 +365,63 @@ const BarfInventoryApp = () => {
         );
     };
 
+    // Función para calcular las porciones faltantes
+    const calculateMissingIngredients = useCallback(() => {
+        const missing = {
+            pollo: 0,
+            higado: 0,
+            rinon: 0,
+            corazon: 0,
+            pescado: 0,
+            carneMolida: 0,
+        };
+
+        incompleteBags.forEach(bag => {
+            const missingIngredientsCount = MAX_INGREDIENTS_PER_BAG - bag.ingredientCount;
+
+            if (missingIngredientsCount > 0) {
+                if (!bag.ingredients.includes('pollo')) missing.pollo += bag.quantity;
+                if (!bag.ingredients.includes('higado')) missing.higado += bag.quantity;
+                if (!bag.ingredients.includes('rinon')) missing.rinon += bag.quantity;
+                if (!bag.ingredients.includes('corazon')) missing.corazon += bag.quantity;
+                if (!bag.ingredients.includes('pescado')) missing.pescado += bag.quantity;
+                if (!bag.ingredients.includes('carneMolida')) missing.carneMolida += bag.quantity;
+            }
+        });
+        return missing;
+    }, [incompleteBags]);
+
+    const missingIngredients = calculateMissingIngredients();
+
+    // Función para calcular la cantidad a comprar
+    const calculatePurchaseAmounts = useCallback(() => {
+        const purchaseAmounts = {};
+        for (const ingredient in missingIngredients) {
+            const totalGrams = (missingIngredients[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+            if (totalGrams > 1000) {
+                // Convertir a kg con un decimal y redondear hacia arriba
+                purchaseAmounts[ingredient] = Math.ceil(totalGrams / 100) / 10; // Redondea a un decimal hacia arriba
+            } else {
+                purchaseAmounts[ingredient] = totalGrams;
+            }
+
+        }
+        return purchaseAmounts;
+    }, [missingIngredients, gramsPerPortion]);
+
+    const purchaseAmounts = calculatePurchaseAmounts();
+
+    const handleGramsChange = (ingredient, value) => {
+        setGramsPerPortion(prevGrams => ({
+            ...prevGrams,
+            [ingredient]: value,
+        }));
+    };
+
+    const toggleEditingGrams = () => {
+        setEditingGrams(prev => !prev);
+    };
+
     // Render
     return (
         <div className="p-4">
@@ -348,7 +431,7 @@ const BarfInventoryApp = () => {
 
             <div className="row g-4">
                 {/* Sección de Bolsas Completas */}
-                <div className="col-md-6">
+                <div className="col-sm-6 col-md-4">
                     <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Completas</h2>
                         <p className="text-muted mb-3">Número de bolsas listas</p>
@@ -357,13 +440,13 @@ const BarfInventoryApp = () => {
                             <div className="d-flex gap-2">
                                 <button
                                     onClick={decrementCompleteBags}
-                                    className="btn btn-outline-secondary"
+                                    className="btn btn-outline-danger"
                                 >
                                     <Minus className="h-4 w-4" />
                                 </button>
                                 <button
                                     onClick={incrementCompleteBags}
-                                    className="btn btn-outline-secondary"
+                                    className="btn btn-outline-success"
                                 >
                                     <Plus className="h-4 w-4" />
                                 </button>
@@ -373,7 +456,7 @@ const BarfInventoryApp = () => {
                 </div>
 
                 {/* Sección de Bolsas Incompletas */}
-                <div className="col-md-6">
+                <div className="col-sm-6 col-md-4">
                     <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Incompletas</h2>
                         <p className="text-muted mb-3">Bolsas con menos de 4 ingredientes</p>
@@ -427,6 +510,64 @@ const BarfInventoryApp = () => {
                                 ))}
                             </AnimatePresence>
                         </div>
+                    </div>
+                </div>
+                {/* Sección de Ingredientes Faltantes */}
+                <div className="col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <h2 className="h5 mb-2">Ingredientes Faltantes para Completar Bolsas</h2>
+                        <p className="text-muted mb-3">Porciones de ingredientes necesarias para completar todas las bolsas incompletas:</p>
+                        <ul className="list-group">
+                            <li className="list-group-item"><strong>Pollo:</strong> {missingIngredients.pollo} porciones</li>
+                            <li className="list-group-item"><strong>Hígado:</strong> {missingIngredients.higado} porciones</li>
+                            <li className="list-group-item"><strong>Riñón:</strong> {missingIngredients.rinon} porciones</li>
+                            <li className="list-group-item"><strong>Corazón:</strong> {missingIngredients.corazon} porciones</li>
+                            <li className="list-group-item"><strong>Pescado:</strong> {missingIngredients.pescado} porciones</li>
+                            <li className="list-group-item"><strong>Carne Molida:</strong> {missingIngredients.carneMolida} porciones</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            {/* Sección de Cantidad a Comprar */}
+            <div className="row mt-4">
+                <div className="col-12 col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h2 className="h5">Cantidad de Ingredientes a Comprar</h2>
+                            <button onClick={toggleEditingGrams} className="btn btn-outline-success btn-sm d-flex align-items-center">
+                                <Settings className="h-4 w-4" />
+                                {editingGrams ? ' Guardar' : ' Editar'} Cantidades
+                            </button>
+                        </div>
+                        <p className="text-muted mb-3">Cantidad total de cada ingrediente necesaria, basada en las porciones faltantes:</p>
+                        <ul className="list-group">
+                            {Object.entries(purchaseAmounts).map(([ingredient, amount]) => (
+                                <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
+                                    <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}: </strong>
+                                        {editingGrams ? (
+                                            <input
+                                                type="number"
+                                                value={gramsPerPortion[ingredient] || 0}
+                                                onChange={(e) => handleGramsChange(ingredient, parseInt(e.target.value, 10))}
+                                                className="form-control w-50 ml-2"
+                                                min="0"
+                                            />
+                                        ) : (
+                                            <span className="ml-2">
+                                                {typeof amount === 'number' ? (Number.isInteger(amount) ? `${amount} g` : `${amount} kg`) : amount}
+                                            </span>
+                                        )}
+                                    </span>
+                                    {!editingGrams && <span>{gramsPerPortion[ingredient]} g / porción</span>}
+                                </li>
+                            ))}
+                        </ul>
+                        {editingGrams && (
+                            <div className="mt-3">
+                                <p className="text-muted small">Edite los gramos por porción y haga clic en Guardar para actualizar los cálculos.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
