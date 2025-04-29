@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, AlertTriangle, Settings } from 'lucide-react';
+import { Plus, Minus, Trash2, Edit, Save, X, CheckCircle, Settings, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -397,7 +397,14 @@ const BarfInventoryApp = () => {
     const calculatePurchaseAmounts = useCallback(() => {
         const purchaseAmounts = {};
         for (const ingredient in missingIngredients) {
-            purchaseAmounts[ingredient] = (missingIngredients[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+            const totalGrams = (missingIngredients[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+            if (totalGrams > 1000) {
+                // Convertir a kg con un decimal y redondear hacia arriba
+                purchaseAmounts[ingredient] = Math.ceil(totalGrams / 100) / 10; // Redondea a un decimal hacia arriba
+            } else {
+                purchaseAmounts[ingredient] = totalGrams;
+            }
+
         }
         return purchaseAmounts;
     }, [missingIngredients, gramsPerPortion]);
@@ -547,7 +554,9 @@ const BarfInventoryApp = () => {
                                                 min="0"
                                             />
                                         ) : (
-                                            <span className="ml-2">{amount > 1000 ? `${amount/1000} kg` : amount + ' g'} </span>
+                                            <span className="ml-2">
+                                                {typeof amount === 'number' ? (Number.isInteger(amount) ? `${amount} g` : `${amount} kg`) : amount}
+                                            </span>
                                         )}
                                     </span>
                                     {!editingGrams && <span>{gramsPerPortion[ingredient]} g / porción</span>}
