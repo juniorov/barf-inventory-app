@@ -85,13 +85,13 @@ const IncompleteBagCard = ({ bag, onEdit, onDelete, onComplete }) => {
             <div className="card-body d-flex justify-content-between align-items-center">
                 <div>
                     <p className="card-text small">
-                        Bolsa ({bag.ingredientCount} ingrediente{bag.ingredientCount !== 1 ? 's' : ''}) - Cantidad: {bag.quantity}
+                        {bag.quantity > 1 ? bag.quantity + ' Bolsas' : bag.quantity + ' Bolsa'} ({bag.ingredientCount} ingrediente{bag.ingredientCount !== 1 ? 's' : ''})
                     </p>
                     <p className="card-subtitle text-muted small">
                         Ingredientes: {bag.ingredients.map(ing => ALL_INGREDIENTS_MAP.get(ing) || 'Desconocido').join(', ')}
                     </p>
                 </div>
-                <div className="d-flex gap-2">
+                <div className="d-flex flex-column gap-2">
                     <button
                         onClick={() => onComplete(bag.id)}
                         title="Completar Bolsa"
