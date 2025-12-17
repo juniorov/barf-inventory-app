@@ -225,7 +225,6 @@ const BarfInventoryApp = () => {
         // --- Lógica de Descuento Automático ---
         if (savedLastUpdateTimestamp) {
             const lastTime = parseInt(savedLastUpdateTimestamp, 10);
-            const currentTime = Date.now();
 
             // Milliseconds in one day
             const msPerDay = 24 * 60 * 60 * 1000;
