@@ -25,7 +25,7 @@ const ALL_INGREDIENTS = [
 
 const MAX_INGREDIENTS_PER_BAG = 4;
 
-// Valores por defecto de gramos por porción.
+// Valores por defecto de gramos por porción.  Ahora es un estado.
 const DEFAULT_GRAMS_PER_PORTION = {
     pollo: 132,
     pescado: 83,
@@ -48,10 +48,9 @@ const Toast = ({ message, type, onClose }) => {
             icon = <AlertTriangle className="h-4 w-4" />;
             colorClass = 'bg-danger text-white';
             break;
-        case 'info':
         default:
-            icon = <CheckCircle className="h-4 w-4" />; // Usar CheckCircle para info también si es una actualización
-            colorClass = 'bg-info text-white';
+            icon = <AlertTriangle className="h-4 w-4" />;
+            colorClass = 'bg-primary text-white';
     }
 
     return (
@@ -183,6 +182,31 @@ const IncompleteBagForm = ({ ingredients: selectedIngredients, quantity: bagQuan
     );
 };
 
+// Componente para la entrada de porciones deseadas
+const DesiredPortionsInput = ({ desiredPortions, onPortionChange }) => {
+    return (
+        <div className="bg-white shadow rounded p-4 mt-4">
+            <h2 className="h5 mb-2">Porciones Deseadas</h2>
+            <p className="text-muted mb-3">Ingresa la cantidad de porciones que necesitas de cada ingrediente:</p>
+            <ul className="list-group">
+                {Object.entries(desiredPortions).map(([ingredient, quantity]) => (
+                    <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
+                        <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}:</strong></span>
+                        <input
+                            type="number"
+                            value={quantity}
+                            onChange={(e) => onPortionChange(ingredient, parseInt(e.target.value, 10) >= 0 ? parseInt(e.target.value, 10) : 0)}
+                            className="form-control w-25 text-end"
+                            min="0"
+                        />
+                        <span>porciones</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
+
 // Componente principal de la aplicación
 const BarfInventoryApp = () => {
     const [completeBags, setCompleteBags] = useState(0);
@@ -194,64 +218,28 @@ const BarfInventoryApp = () => {
     const [toastMessage, setToastMessage] = useState('');
     const [toastType, setToastType] = useState('info');
     const [quantity, setQuantity] = useState(1);
-    const [gramsPerPortion, setGramsPerPortion] = useState(DEFAULT_GRAMS_PER_PORTION);
+    const [gramsPerPortion, setGramsPerPortion] = useState(DEFAULT_GRAMS_PER_PORTION);  // Nuevo estado para los gramos por porción
     const [editingGrams, setEditingGrams] = useState(false);
+    const [desiredPortions, setDesiredPortions] = useState({ // Nuevo estado para las porciones deseadas
+        pollo: 0,
+        higado: 0,
+        rinon: 0,
+        corazon: 0,
+        pescado: 0,
+        carneMolida: 0,
+    });
+    const [bagToDeleteId, setBagToDeleteId] = useState(null); // Estado para controlar el ID de la bolsa a eliminar
 
-    // Nuevo estado para la marca de tiempo de la última actualización
-    const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(Date.now());
-
-    // Función para mostrar un toast
-    const showMessage = (message, type = 'info') => {
-        setToastMessage(message);
-        setToastType(type);
-        setShowToast(true);
-        setTimeout(() => {
-            setShowToast(false);
-        }, 6000); // 6 segundos para mensajes automáticos
-    };
-
-    // Carga inicial y lógica de descuento automático
+    // Carga inicial desde localStorage
     useEffect(() => {
         const savedCompleteBags = localStorage.getItem('completeBags');
         const savedIncompleteBags = localStorage.getItem('incompleteBags');
         const savedGramsPerPortion = localStorage.getItem('gramsPerPortion');
-        const savedLastUpdateTimestamp = localStorage.getItem('lastUpdateTimestamp');
+        const savedDesiredPortions = localStorage.getItem('desiredPortions');
 
-        let initialCompleteBags = 0;
         if (savedCompleteBags) {
-            initialCompleteBags = parseInt(savedCompleteBags, 10);
+            setCompleteBags(parseInt(savedCompleteBags, 10));
         }
-
-        // --- Lógica de Descuento Automático ---
-        if (savedLastUpdateTimestamp) {
-            const lastTime = parseInt(savedLastUpdateTimestamp, 10);
-
-            // Milliseconds in one day
-            const msPerDay = 24 * 60 * 60 * 1000;
-
-            // Normalizar fechas a medianoche (00:00:00) para calcular días completos
-            const startOfToday = new Date().setHours(0, 0, 0, 0);
-            const startOfLastUpdateDay = new Date(lastTime).setHours(0, 0, 0, 0);
-
-            // Calcular días completos transcurridos
-            const daysPassed = Math.floor((startOfToday - startOfLastUpdateDay) / msPerDay);
-
-            if (daysPassed > 0) {
-                const deduction = daysPassed * 2; // 2 bolsas por día
-                const newCompleteBags = Math.max(0, initialCompleteBags - deduction);
-
-                if (newCompleteBags < initialCompleteBags) {
-                    const bagsDeducted = initialCompleteBags - newCompleteBags;
-                    showMessage(
-                        `Descuento automático: Se descontaron ${bagsDeducted} bolsas (Comida de ${daysPassed} día(s)). Nuevo inventario: ${newCompleteBags}`,
-                        'info'
-                    );
-                    initialCompleteBags = newCompleteBags;
-                }
-            }
-        }
-
-        // Cargar bolsas incompletas
         if (savedIncompleteBags) {
             try {
                 const parsedBags = JSON.parse(savedIncompleteBags);
@@ -273,8 +261,6 @@ const BarfInventoryApp = () => {
                 setIncompleteBags([]);
             }
         }
-
-        // Cargar gramos por porción
         if (savedGramsPerPortion) {
             try {
                 setGramsPerPortion(JSON.parse(savedGramsPerPortion));
@@ -283,10 +269,21 @@ const BarfInventoryApp = () => {
                 setGramsPerPortion(DEFAULT_GRAMS_PER_PORTION);
             }
         }
-
-        // Establecer el nuevo inventario y la marca de tiempo (incluso si no hay descuento)
-        setCompleteBags(initialCompleteBags);
-        setLastUpdateTimestamp(Date.now());
+        if (savedDesiredPortions) {
+            try {
+                setDesiredPortions(JSON.parse(savedDesiredPortions));
+            } catch (error) {
+                console.error("Error parsing desiredPortions", error);
+                setDesiredPortions({
+                    pollo: 0,
+                    higado: 0,
+                    rinon: 0,
+                    corazon: 0,
+                    pescado: 0,
+                    carneMolida: 0,
+                });
+            }
+        }
 
     }, []);
 
@@ -295,33 +292,46 @@ const BarfInventoryApp = () => {
         localStorage.setItem('completeBags', completeBags.toString());
         localStorage.setItem('incompleteBags', JSON.stringify(incompleteBags));
         localStorage.setItem('gramsPerPortion', JSON.stringify(gramsPerPortion));
-        // Guardar la marca de tiempo cada vez que se actualiza cualquier estado persistente
-        localStorage.setItem('lastUpdateTimestamp', lastUpdateTimestamp.toString());
-    }, [completeBags, incompleteBags, gramsPerPortion, lastUpdateTimestamp]);
+        localStorage.setItem('desiredPortions', JSON.stringify(desiredPortions)); // Guardar porciones deseadas
+    }, [completeBags, incompleteBags, gramsPerPortion, desiredPortions]);
 
+    // Función para mostrar un toast
+    const showMessage = (message, type = 'info') => {
+        setToastMessage(message);
+        setToastType(type);
+        setShowToast(true);
+        setTimeout(() => {
+            setShowToast(false);
+        }, 3000);
+    };
 
     // Funciones para el inventario completo
     const incrementCompleteBags = () => {
         setCompleteBags(prev => prev + 1);
-        setLastUpdateTimestamp(Date.now()); // Actualizar timestamp al hacer un cambio manual
         showMessage('Se agregó una bolsa completa', 'success');
     };
 
     const decrementCompleteBags = () => {
         if (completeBags > 0) {
             setCompleteBags(prev => prev - 1);
-            setLastUpdateTimestamp(Date.now()); // Actualizar timestamp al hacer un cambio manual
             showMessage('Se eliminó una bolsa completa', 'error');
         } else {
             showMessage('No hay bolsas completas para eliminar', 'error');
         }
     };
 
-    // Funciones para el inventario incompleto (Mantienen la lógica de actualizar el timestamp)
-
-    const addIncompleteBag = (bagQuantity) => {
-        if (selectedIngredients.length === 0 || selectedIngredients.length > 4 || bagQuantity <= 0) {
-            showMessage('Error al agregar la bolsa. Revise ingredientes (1-4) y cantidad (>0)', 'error');
+    // Funciones para el inventario incompleto
+    const addIncompleteBag = (bagQuantity) => { //recibe la cantidad
+        if (selectedIngredients.length === 0) {
+            showMessage('Debes seleccionar al menos un ingrediente', 'error');
+            return;
+        }
+        if (selectedIngredients.length > 4) {
+            showMessage('No puedes seleccionar más de 4 ingredientes', 'error');
+            return;
+        }
+        if (bagQuantity <= 0) { //valida la cantidad
+            showMessage('La cantidad debe ser mayor que cero', 'error');
             return;
         }
 
@@ -329,13 +339,12 @@ const BarfInventoryApp = () => {
             id: crypto.randomUUID(),
             ingredients: selectedIngredients,
             ingredientCount: selectedIngredients.length,
-            quantity: bagQuantity,
+            quantity: bagQuantity, //usa la cantidad recibida
         };
         setIncompleteBags([...incompleteBags, newBag]);
         setIsAdding(false);
         setSelectedIngredients([]);
         setQuantity(1);
-        setLastUpdateTimestamp(Date.now());
         showMessage('Bolsa incompleta agregada', 'success');
     };
 
@@ -348,30 +357,48 @@ const BarfInventoryApp = () => {
         }
     };
 
-    const saveEditedBag = (id, bagQuantity) => {
-        if (selectedIngredients.length === 0 || selectedIngredients.length > 4 || bagQuantity <= 0) {
-            showMessage('Error al guardar. Revise ingredientes (1-4) y cantidad (>0)', 'error');
+    const saveEditedBag = (id, bagQuantity) => { //recibe la cantidad
+        if (selectedIngredients.length === 0) {
+            showMessage('Debes seleccionar al menos un ingrediente', 'error');
+            return;
+        }
+        if (selectedIngredients.length > 4) {
+            showMessage('No puedes seleccionar más de 4 ingredientes', 'error');
+            return;
+        }
+        if (bagQuantity <= 0) { //valida la cantidad
+            showMessage('La cantidad debe ser mayor que cero', 'error');
             return;
         }
         setIncompleteBags(incompleteBags.map(bag =>
             bag.id === id
-                ? { ...bag, ingredients: selectedIngredients, ingredientCount: selectedIngredients.length, quantity: bagQuantity }
+                ? { ...bag, ingredients: selectedIngredients, ingredientCount: selectedIngredients.length, quantity: bagQuantity } //usa la cantidad recibida
                 : bag
         ));
         setEditingBagId(null);
         setSelectedIngredients([]);
         setQuantity(1);
-        setLastUpdateTimestamp(Date.now());
         showMessage('Bolsa incompleta editada', 'success');
     };
 
     const deleteBag = (id) => {
-        setIncompleteBags(prevBags => {
-            const updatedBags = prevBags.filter(bag => bag.id !== id);
-            return updatedBags;
-        });
-        setLastUpdateTimestamp(Date.now());
-        showMessage('Bolsa incompleta eliminada', 'error');
+        setBagToDeleteId(id); // Almacena el ID de la bolsa a eliminar y abre el modal de confirmación
+    };
+
+    const confirmDeleteBag = () => {
+        // Elimina la bolsa solo si hay un ID almacenado
+        if (bagToDeleteId) {
+            setIncompleteBags(prevBags => {
+                const updatedBags = prevBags.filter(bag => bag.id !== bagToDeleteId);
+                return updatedBags;
+            });
+            showMessage('Bolsa incompleta eliminada', 'error');
+        }
+        setBagToDeleteId(null); // Resetea el ID y cierra el modal
+    };
+
+    const cancelDeleteBag = () => {
+        setBagToDeleteId(null); // Resetea el ID y cierra el modal
     };
 
     const completeBag = (id) => {
@@ -382,7 +409,6 @@ const BarfInventoryApp = () => {
             if (bagToComplete.ingredientCount === 4) {
                 setCompleteBags(currentCompleteBags => currentCompleteBags + bagToComplete.quantity);
                 const updatedBags = prevBags.filter(bag => bag.id !== id);
-                setLastUpdateTimestamp(Date.now());
                 showMessage('Bolsa(s) completada(s) y movida(s) a inventario completo', 'success');
                 return updatedBags;
             } else {
@@ -390,6 +416,7 @@ const BarfInventoryApp = () => {
                 return prevBags;
             }
         });
+
     };
 
     const toggleIngredient = (ingredientValue) => {
@@ -403,7 +430,12 @@ const BarfInventoryApp = () => {
     // Función para calcular las porciones faltantes
     const calculateMissingIngredients = useCallback(() => {
         const missing = {
-            pollo: 0, higado: 0, rinon: 0, corazon: 0, pescado: 0, carneMolida: 0,
+            pollo: 0,
+            higado: 0,
+            rinon: 0,
+            corazon: 0,
+            pescado: 0,
+            carneMolida: 0,
         };
 
         incompleteBags.forEach(bag => {
@@ -428,12 +460,9 @@ const BarfInventoryApp = () => {
         const purchaseAmounts = {};
         for (const ingredient in missingIngredients) {
             const totalGrams = (missingIngredients[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
-
             if (totalGrams > 1000) {
-                // Convertir a kg con un decimal y redondear hacia arriba (ceil)
-                // Math.ceil(1825 / 100) / 10 = Math.ceil(18.25) / 10 = 19 / 10 = 1.9
-                // Math.ceil(1235 / 100) / 10 = Math.ceil(12.35) / 10 = 13 / 10 = 1.3
-                purchaseAmounts[ingredient] = Math.ceil(totalGrams / 100) / 10;
+                // Convertir a kg con un decimal y redondear hacia arriba
+                purchaseAmounts[ingredient] = Math.ceil(totalGrams / 100) / 10; // Redondea a un decimal hacia arriba
             } else {
                 purchaseAmounts[ingredient] = totalGrams;
             }
@@ -444,10 +473,33 @@ const BarfInventoryApp = () => {
 
     const purchaseAmounts = calculatePurchaseAmounts();
 
+      // Función para calcular la cantidad a comprar basado en las porciones deseadas
+    const calculatePurchaseFromDesired = useCallback(() => {
+        const purchaseAmountsDesired = {};
+        for (const ingredient in desiredPortions) {
+            const totalGrams = (desiredPortions[ingredient] || 0) * (gramsPerPortion[ingredient] || 0);
+             if (totalGrams > 1000) {
+                purchaseAmountsDesired[ingredient] = Math.ceil(totalGrams / 100) / 10;
+            } else {
+                purchaseAmountsDesired[ingredient] = totalGrams;
+            }
+        }
+        return purchaseAmountsDesired;
+    }, [desiredPortions, gramsPerPortion]);
+
+    const purchaseAmountsDesired = calculatePurchaseFromDesired();
+
     const handleGramsChange = (ingredient, value) => {
         setGramsPerPortion(prevGrams => ({
             ...prevGrams,
             [ingredient]: value,
+        }));
+    };
+
+      const handleDesiredPortionChange = (ingredient, quantity) => {
+        setDesiredPortions(prev => ({
+            ...prev,
+            [ingredient]: quantity,
         }));
     };
 
@@ -464,8 +516,8 @@ const BarfInventoryApp = () => {
 
             <div className="row g-4">
                 {/* Sección de Bolsas Completas */}
-                <div className="col-12 col-md-6 col-lg-3">
-                    <div className="bg-white shadow rounded p-4 h-full">
+                <div className="col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Completas</h2>
                         <p className="text-muted mb-3">Número de bolsas listas</p>
                         <div className="d-flex justify-content-between align-items-center">
@@ -485,15 +537,12 @@ const BarfInventoryApp = () => {
                                 </button>
                             </div>
                         </div>
-                        <p className="text-muted small mt-3">
-                            <small>Última actualización de inventario: {new Date(lastUpdateTimestamp).toLocaleDateString()} {new Date(lastUpdateTimestamp).toLocaleTimeString()}</small>
-                        </p>
                     </div>
                 </div>
 
                 {/* Sección de Bolsas Incompletas */}
-                <div className="col-12 col-md-6 col-lg-5">
-                    <div className="bg-white shadow rounded p-4 h-full">
+                <div className="col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
                         <h2 className="h5 mb-2">Bolsas Incompletas</h2>
                         <p className="text-muted mb-3">Bolsas con menos de 4 ingredientes</p>
                         <div className="mb-3">
@@ -519,7 +568,7 @@ const BarfInventoryApp = () => {
                                     quantity={quantity}
                                     onIngredientToggle={toggleIngredient}
                                     onSave={editingBagId
-                                        ? (bagQuantity) => saveEditedBag(editingBagId, bagQuantity)
+                                        ? (bagQuantity) => saveEditedBag(editingBagId, bagQuantity) // Pasa la cantidad al guardar la edición
                                         : (bagQuantity) => addIncompleteBag(bagQuantity)
                                     }
                                     onCancel={() => {
@@ -545,68 +594,32 @@ const BarfInventoryApp = () => {
                                     />
                                 ))}
                             </AnimatePresence>
-                            {incompleteBags.length === 0 && !isAdding && editingBagId === null && (
-                                <div className="text-muted text-center py-4 border rounded">
-                                    No hay bolsas incompletas. ¡Excelente!
-                                </div>
+                        </div>
+                         <AnimatePresence>
+                            {bagToDeleteId && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 z-50 flex justify-center items-center"
+                                >
+                                    <div className="bg-white rounded-md p-6 shadow-lg">
+                                        <p className="mb-4">¿Estás seguro de que quieres eliminar esta bolsa?</p>
+                                        <div className="d-flex justify-end gap-2">
+                                            <button className="btn btn-secondary" onClick={cancelDeleteBag}>Cancelar</button>
+                                            <button className="btn btn-danger" onClick={confirmDeleteBag}>Eliminar</button>
+                                        </div>
+                                    </div>
+                                </motion.div>
                             )}
-                        </div>
+                        </AnimatePresence>
                     </div>
                 </div>
-
-                {/* Sección de Cantidad a Comprar */}
-                <div className="col-12 col-md-6 col-lg-4">
-                    <div className="bg-white shadow rounded p-4 h-full">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                            <h2 className="h5">Cantidad de Ingredientes a Comprar</h2>
-                            <button onClick={toggleEditingGrams} className="btn btn-outline-secondary btn-sm d-flex align-items-center">
-                                <Settings className="h-4 w-4 mr-1" />
-                                {editingGrams ? ' Guardar' : ' Editar'} Cantidades
-                            </button>
-                        </div>
-                        <p className="text-muted mb-3">Cantidad total de cada ingrediente (kg/g):</p>
-                        <ul className="list-group">
-                            {Object.entries(purchaseAmounts).map(([ingredient, amount]) => (
-                                <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
-                                    <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}: </strong>
-                                        {/* Muestra la cantidad con formato kg o g */}
-                                        <span className={`ml-2 font-weight-bold ${amount > 0 ? 'text-primary' : 'text-success'}`}>
-                                            {typeof amount === 'number' && amount > 1000 ? `${amount.toFixed(1)} kg` : `${amount} g`}
-                                        </span>
-                                    </span>
-                                    {!editingGrams && <span>{gramsPerPortion[ingredient]} g / porción</span>}
-                                </li>
-                            ))}
-                        </ul>
-                        {editingGrams && (
-                             <div className="mt-3">
-                                <p className="text-muted small">Edite los gramos por porción:</p>
-                                <ul className="list-group">
-                                    {ALL_INGREDIENTS.map(ing => (
-                                        <li key={ing.value} className="list-group-item d-flex justify-content-between align-items-center p-2">
-                                            <span>{ing.label}:</span>
-                                            <input
-                                                type="number"
-                                                value={gramsPerPortion[ing.value] || 0}
-                                                onChange={(e) => handleGramsChange(ing.value, parseInt(e.target.value, 10))}
-                                                className="form-control w-50"
-                                                min="0"
-                                            />
-                                            <span className='ml-1'>g</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                                <p className="text-muted small mt-3">Haga clic en Guardar para actualizar los cálculos.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Sección de Ingredientes Faltantes (Movida al lado de Cantidad a Comprar en pantallas grandes) */}
-                <div className="col-12 col-md-6 col-lg-3">
-                    <div className="bg-white shadow rounded p-4 h-full">
-                        <h2 className="h5 mb-2">Porciones Faltantes</h2>
-                        <p className="text-muted mb-3"># de porciones necesarias (bolsas incompletas):</p>
+                {/* Sección de Ingredientes Faltantes */}
+                <div className="col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <h2 className="h5 mb-2">Ingredientes Faltantes para Completar Bolsas</h2>
+                        <p className="text-muted mb-3">Porciones de ingredientes necesarias para completar todas las bolsas incompletas:</p>
                         <ul className="list-group">
                             <li className="list-group-item"><strong>Pollo:</strong> {missingIngredients.pollo} porciones</li>
                             <li className="list-group-item"><strong>Hígado:</strong> {missingIngredients.higado} porciones</li>
@@ -619,6 +632,70 @@ const BarfInventoryApp = () => {
                 </div>
             </div>
 
+            {/* Sección de Cantidad a Comprar */}
+            <div className="row mt-4">
+                <div className="col-12 col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h2 className="h5">Cantidad de Ingredientes a Comprar</h2>
+                            <button onClick={toggleEditingGrams} className="btn btn-outline-success btn-sm d-flex align-items-center">
+                                <Settings className="h-4 w-4" />
+                                {editingGrams ? ' Guardar' : ' Editar'} Cantidades
+                            </button>
+                        </div>
+                        <p className="text-muted mb-3">Cantidad total de cada ingrediente necesaria, basada en las porciones faltantes:</p>
+                        <ul className="list-group">
+                            {Object.entries(purchaseAmounts).map(([ingredient, amount]) => (
+                                <li key={ingredient} className="list-group-item d-flex justify-content-between align-items-center">
+                                    <span><strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}: </strong>
+                                        {editingGrams ? (
+                                            <input
+                                                type="number"
+                                                value={gramsPerPortion[ingredient] || 0}
+                                                onChange={(e) => handleGramsChange(ingredient, parseInt(e.target.value, 10))}
+                                                className="form-control w-50 ml-2"
+                                                min="0"
+                                            />
+                                        ) : (
+                                            <span className="ml-2">
+                                                {typeof amount === 'number' ? (Number.isInteger(amount) ? `${amount} g` : `${amount} kg`) : amount}
+                                            </span>
+                                        )}
+                                    </span>
+                                    {!editingGrams && <span>{gramsPerPortion[ingredient]} g / porción</span>}
+                                </li>
+                            ))}
+                        </ul>
+                        {editingGrams && (
+                            <div className="mt-3">
+                                <p className="text-muted small">Edite los gramos por porción y haga clic en Guardar para actualizar los cálculos.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="col-12 col-sm-6 col-md-4">
+                    <DesiredPortionsInput
+                        desiredPortions={desiredPortions}
+                        onPortionChange={handleDesiredPortionChange}
+                    />
+                </div>
+
+                <div className="col-12 col-sm-6 col-md-4">
+                    <div className="bg-white shadow rounded p-4 mt-4">
+                        <h2 className="h5 mb-2">Total a Comprar (Porciones Deseadas)</h2>
+                        <p className="text-muted mb-3">Cantidad total de cada ingrediente a comprar según las porciones deseadas:</p>
+                        <ul className="list-group">
+                            {Object.entries(purchaseAmountsDesired).map(([ingredient, amount]) => (
+                                <li key={ingredient} className="list-group-item">
+                                    <strong>{ALL_INGREDIENTS.find(i => i.value === ingredient)?.label || ingredient}:</strong>{' '}
+                                    {typeof amount === 'number' ? (Number.isInteger(amount) ? `${amount} g` : `${amount} kg`) : amount}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
             <AnimatePresence>
                 {showToast && (
                     <Toast
